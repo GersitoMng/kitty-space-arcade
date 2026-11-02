@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kitty's Space Arcade</title>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&family=Nunito:wght@600;800&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;height:100%;background:#1A1340;overflow:hidden}
+#stage{position:absolute;left:50%;top:50%;width:1040px;height:720px;transform-origin:center center}
+button{font-family:'Nunito',system-ui,sans-serif;cursor:pointer}
+button:disabled{cursor:default}
+button:focus-visible{outline:4px solid #FFD84D;outline-offset:3px}
+@keyframes twinkle{0%,100%{opacity:.35}50%{opacity:1}}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+</style>
+</head>
+<body>
+<div id="stage"><div id="root"></div></div>
+<script>
+(function () {
+  var WAVES = [{ name: 'Moon Hop', fall: 15 }, { name: 'Mars Rover', fall: 12 }, { name: 'Saturn Mission', fall: 10 }];
+  var Q = [
+    { q: '1.2 + 0.5 = ?', o: ['1.7', '1.3', '6.2', '1.07'], a: 0, e: '1.2 + 0.5 = 1.7.' },
+    { q: '3.4 + 2.3 = ?', o: ['5.1', '5.7', '6.7', '1.1'], a: 1, e: '3.4 + 2.3 = 5.7.' },
+    { q: '0.6 + 0.3 = ?', o: ['0.3', '0.09', '0.9', '1.9'], a: 2, e: '6 tenths + 3 tenths = 0.9.' },
+    { q: '5.8 − 2.4 = ?', o: ['3.2', '8.2', '2.4', '3.4'], a: 3, e: '5.8 − 2.4 = 3.4.' },
+    { q: '4.7 − 1.2 = ?', o: ['3.5', '3.9', '5.9', '2.5'], a: 0, e: '4.7 − 1.2 = 3.5.' },
+    { q: '0.9 − 0.4 = ?', o: ['0.4', '1.3', '0.5', '0.05'], a: 2, e: '9 tenths − 4 tenths = 0.5.' },
+    { q: '3.45 + 2.31 = ?', o: ['5.66', '6.76', '5.76', '5.75'], a: 2, e: '3.45 + 2.31 = 5.76.' },
+    { q: '1.50 + 0.75 = ?', o: ['2.25', '2.05', '1.25', '3.25'], a: 0, e: '1.50 + 0.75 = 2.25.' },
+    { q: '6.80 + 2.45 = ?', o: ['8.25', '9.15', '10.25', '9.25'], a: 3, e: '6.80 + 2.45 = 9.25.' },
+    { q: '7.89 − 3.24 = ?', o: ['4.75', '4.65', '5.65', '4.55'], a: 1, e: '7.89 − 3.24 = 4.65.' },
+    { q: '5.00 − 1.25 = ?', o: ['4.25', '3.85', '4.75', '3.75'], a: 3, e: '5.00 − 1.25 = 3.75.' },
+    { q: '8.4 − 2.15 = ?', o: ['6.35', '6.25', '5.75', '6.65'], a: 1, e: '8.40 − 2.15 = 6.25.' },
+    { q: 'Kitty collects 2.75 kg of stardust, then 3.8 kg more. How much in all?', o: ['5.55 kg', '6.05 kg', '6.55 kg', '5.83 kg'], a: 2, e: '2.75 + 3.80 = 6.55 kg.' },
+    { q: 'A rocket has 15 L of fuel and uses 6.4 L. How much is left?', o: ['9.4 L', '8.6 L', '8.4 L', '21.4 L'], a: 1, e: '15.0 − 6.4 = 8.6 L.' },
+    { q: '12.5 + 7.75 − 4.3 = ?', o: ['16.05', '15.45', '24.55', '15.95'], a: 3, e: '20.25 − 4.30 = 15.95.' },
+    { q: 'A moon rock weighs 4.06 kg and a star rock 2.9 kg. How much heavier is the moon rock?', o: ['1.16 kg', '2.16 kg', '1.84 kg', '1.26 kg'], a: 0, e: '4.06 − 2.90 = 1.16 kg.' },
+    { q: 'A snack costs $2.35, a juice $1.80 and a sticker $0.95. What is the total?', o: ['$4.10', '$4.90', '$5.10', '$5.01'], a: 2, e: '2.35 + 1.80 + 0.95 = $5.10.' },
+    { q: 'Kitty pays with $5 for a $2.35 snack and a $1.80 juice. How much change?', o: ['$0.95', '$1.15', '$0.75', '$0.85'], a: 3, e: '5.00 − 4.15 = $0.85.' }
+  ];
+  var S = { screen: 'menu', qIdx: 0, y: 0, phase: 'falling', hold: 0, picked: null, result: null, wrong: [], gain: 0, score: 0, combo: 0, bestCombo: 0, lives: 5, correct: 0, hi: 0, newHi: false };
+  var root = document.getElementById('root'), stage = document.getElementById('stage');
+  var FF = "font-family:'Fredoka',system-ui,sans-serif";
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  function $(id) { return document.getElementById(id); }
+
+  var HEART = '<path d="M12 21s-7-4.35-9.5-8.5C0.8 9.5 2.5 5 6.5 5c2 0 3.5 1 5.5 3 2-2 3.5-3 5.5-3 4 0 5.7 4.5 4 7.5C19 16.65 12 21 12 21z" stroke-linejoin="round"/>';
+  var STAR = '<path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z" stroke-linejoin="round"/>';
+  function heartSvg(f, n) { return '<svg width="' + n + '" height="' + n + '" viewBox="0 0 24 24" aria-hidden="true" fill="' + f + '" stroke="#FFFFFF" stroke-width="1.6">' + HEART + '</svg>'; }
+  function starSvg(f, n) { return '<svg width="' + n + '" height="' + n + '" viewBox="0 0 24 24" aria-hidden="true" fill="' + f + '" stroke="#FFFFFF" stroke-width="1.2">' + STAR + '</svg>'; }
+
+  var CAT_BODY = '<polygon points="24,52 22,18 52,38" fill="#FFB86B" stroke="#241B4D" stroke-width="3" stroke-linejoin="round"/><polygon points="96,52 98,18 68,38" fill="#FFB86B" stroke="#241B4D" stroke-width="3" stroke-linejoin="round"/>' +
+    '<polygon points="29,44 28,27 44,38" fill="#FFB3D0"/><polygon points="91,44 92,27 76,38" fill="#FFB3D0"/>' +
+    '<ellipse cx="60" cy="72" rx="38" ry="32" fill="#FFB86B" stroke="#241B4D" stroke-width="3"/>' +
+    '<circle cx="45" cy="68" r="5.5" fill="#241B4D"/><circle cx="75" cy="68" r="5.5" fill="#241B4D"/>' +
+    '<circle cx="47" cy="66" r="1.8" fill="#FFFFFF"/><circle cx="77" cy="66" r="1.8" fill="#FFFFFF"/>' +
+    '<ellipse cx="34" cy="82" rx="7" ry="4.5" fill="#FF8FB5"/><ellipse cx="86" cy="82" rx="7" ry="4.5" fill="#FF8FB5"/>' +
+    '<polygon points="55,76 65,76 60,82" fill="#E0457B"/>' +
+    '<path d="M60 82 q-5 7 -10 2 M60 82 q5 7 10 2" fill="none" stroke="#241B4D" stroke-width="2.6" stroke-linecap="round"/>' +
+    '<path d="M18 74 h14 M18 82 h14 M102 74 h-14 M102 82 h-14" stroke="#241B4D" stroke-width="2" stroke-linecap="round"/>' +
+    '<circle cx="60" cy="68" r="56" fill="#BFE9FF" fill-opacity="0.28" stroke="#FFFFFF" stroke-width="4"/>';
+
+  var STARS_BG = [[80, 120, 8, '#FFD84D', 2], [300, 60, 6, '#FFFFFF', 3], [520, 250, 7, '#FFD84D', 2.5], [820, 190, 8, '#FFFFFF', 2.2], [930, 420, 6, '#FFD84D', 3.2], [150, 460, 6, '#FFFFFF', 2.8], [700, 330, 6, '#FFFFFF', 2.4]]
+    .map(function (d) { return '<div style="position:absolute;left:' + d[0] + 'px;top:' + d[1] + 'px;width:' + d[2] + 'px;height:' + d[2] + 'px;border-radius:50%;background:' + d[3] + ';animation:twinkle ' + d[4] + 's infinite"></div>'; }).join('');
+  function frame(inner) {
+    return '<div style="width:1040px;height:720px;box-sizing:border-box;background:#1A1340;color:#FFFFFF;font-family:\'Nunito\',system-ui,sans-serif;padding:24px 40px;display:flex;flex-direction:column;gap:14px;position:relative;overflow:hidden">' + STARS_BG + inner + '</div>';
+  }
+
+  function menu() {
+    return frame('<div style="position:relative;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;text-align:center">' +
+      '<div style="animation:bob 2.4s ease-in-out infinite"><svg width="150" height="162" viewBox="0 0 120 130" role="img" aria-label="Kitty the astronaut cat">' + CAT_BODY + '<path d="M28 40 q8 -14 24 -18" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-opacity="0.8"/></svg></div>' +
+      '<h1 style="margin:0;' + FF + ';font-weight:700;font-size:64px;line-height:1">Kitty\'s Space Arcade</h1>' +
+      '<p style="margin:0;font-size:26px;font-weight:600;max-width:700px;line-height:1.35">Asteroids with answers are falling! Tap the one with the right decimal answer before it reaches Kitty.</p>' +
+      '<div style="display:flex;gap:28px;font-size:22px;font-weight:800"><span>3 waves</span><span>18 questions</span><span>5 hearts</span></div>' +
+      '<button data-a="start" style="margin-top:6px;min-height:72px;padding:0 64px;font-size:34px;font-weight:700;' + FF + ';background:#FFD84D;color:#241B4D;border:0;border-radius:999px;box-shadow:0 6px 0 #B8932A">Start mission</button>' +
+      '<div style="font-size:20px;font-weight:800;color:#D9D0F2">High score: ' + S.hi + '</div></div>');
+  }
+
+  function buildPlay() {
+    var lanes = [0, 1, 2, 3].map(function (i) {
+      return '<div style="position:absolute;left:' + (i * 25) + '%;top:0;width:25%;height:100%;display:flex;justify-content:center"><button id="a' + i + '" data-a="pick" data-i="' + i + '" style="position:absolute;top:0;width:116px;height:116px;box-sizing:border-box;border-radius:50%;border:5px solid #FFFFFF;background:#5B3FA8;color:#FFFFFF;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:0"><span id="at' + i + '" style="' + FF + ';font-weight:700;font-size:28px;line-height:1"></span><span id="am' + i + '" style="font-size:15px;font-weight:800;line-height:1"></span></button></div>';
+    }).join('');
+    return frame('<div style="position:relative;display:flex;flex-direction:column;gap:12px;flex:1">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:16px"><div id="wave" style="' + FF + ';font-weight:700;font-size:26px"></div>' +
+      '<div style="display:flex;align-items:center;gap:20px"><div id="combo" style="font-weight:800;font-size:22px;padding:4px 16px;border-radius:999px;border:3px solid #FFD84D;color:#FFD84D;min-width:110px;text-align:center"></div>' +
+      '<div id="score" style="' + FF + ';font-weight:700;font-size:30px;min-width:120px;text-align:right"></div><div id="hearts" style="display:flex;align-items:center;gap:4px"></div></div></div>' +
+      '<div style="background:#F3EEFF;color:#241B4D;border:3px solid #FFFFFF;border-radius:24px;padding:14px 28px;display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:96px;box-sizing:border-box"><div id="qtext" style="' + FF + ';font-weight:700;font-size:34px;line-height:1.15"></div><div id="qnum" style="font-weight:800;font-size:18px;white-space:nowrap"></div></div>' +
+      '<div style="position:relative;height:390px;border-radius:24px;background:rgba(255,255,255,0.05);overflow:hidden">' + lanes + '<div style="position:absolute;left:0;right:0;bottom:0;height:4px;background:#FF6FA3;opacity:0.8"></div></div>' +
+      '<div style="position:relative;height:84px;display:flex;align-items:center"><div id="cat" style="position:absolute;bottom:0;left:50%;width:84px;margin-left:-42px;transition:left 0.25s ease-out"><svg width="84" height="84" viewBox="0 0 120 130" role="img" aria-label="Kitty">' + CAT_BODY + '</svg></div>' +
+      '<div id="fb" style="display:none;align-items:center;gap:14px;width:100%;padding:0 8px;box-sizing:border-box;justify-content:center"><div id="fbt" style="' + FF + ';font-weight:700;font-size:28px;white-space:nowrap;background:#1A1340;padding:4px 12px;border-radius:12px"></div><div id="fbe" style="font-size:20px;font-weight:600;line-height:1.25;background:#1A1340;padding:4px 12px;border-radius:12px;max-width:560px"></div></div></div></div>');
+  }
+
+  function refreshPlay(full) {
+    var q = Q[S.qIdx], falling = S.phase === 'falling', wave = Math.floor(S.qIdx / 6);
+    for (var i = 0; i < 4; i++) {
+      var b = $('a' + i); if (!b) return;
+      var isC = i === q.a, isW = S.wrong.indexOf(i) >= 0, bg = '#5B3FA8', mark = '', op = 1;
+      if (!falling) { if (isC) { bg = '#1B7F4B'; mark = S.result === 'ok' ? '+' + S.gain : 'Answer'; } else op = 0.3; }
+      if (isW) { bg = '#B3261E'; mark = 'Wrong'; op = 0.55; }
+      b.style.top = Math.round(S.y / 100 * 274) + 'px';
+      if (full) {
+        b.style.background = bg; b.style.opacity = op; b.disabled = !falling || isW;
+        $('at' + i).textContent = q.o[i]; $('am' + i).textContent = mark; b.setAttribute('aria-label', 'Answer ' + q.o[i]);
+      }
+    }
+    if (!full) return;
+    $('wave').textContent = 'Wave ' + (wave + 1) + ': ' + WAVES[wave].name;
+    $('combo').textContent = 'Combo x' + S.combo;
+    $('score').textContent = S.score;
+    $('hearts').innerHTML = [0, 1, 2, 3, 4].map(function (k) { return heartSvg(k < S.lives ? '#FF6FA3' : 'none', 32); }).join('');
+    $('qtext').textContent = q.q; $('qnum').textContent = (S.qIdx + 1) + ' / 18';
+    $('cat').style.left = ((S.picked === null ? 1.5 : S.picked) * 25 + 12.5) + '%';
+    var fb = $('fb'); fb.style.display = falling ? 'none' : 'flex';
+    if (!falling) {
+      var ok = S.result === 'ok';
+      $('fbt').textContent = ok ? 'Boom!' : (S.result === 'miss' ? 'Too slow!' : 'Out of hearts!');
+      $('fbt').style.color = ok ? '#7DE0A8' : '#FF9AA2'; $('fbe').textContent = q.e;
+    }
+  }
+
+  function end() {
+    var won = S.qIdx >= 17 && S.lives > 0;
+    var earned = S.correct >= 16 ? 3 : S.correct >= 11 ? 2 : S.correct >= 6 ? 1 : 0;
+    return frame('<div style="position:relative;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center">' +
+      '<div style="display:flex;gap:12px">' + [0, 1, 2].map(function (k) { return starSvg(k < earned ? '#FFD84D' : 'none', 84); }).join('') + '</div>' +
+      '<h1 style="margin:0;' + FF + ';font-weight:700;font-size:58px;line-height:1">' + (won ? 'Mission complete!' : 'Game over') + '</h1>' +
+      '<p style="margin:0;font-size:26px;font-weight:600;max-width:640px;line-height:1.35">' + (won ? 'Kitty crossed all three waves. Great decimal skills!' : 'Kitty ran out of hearts. Try again and beat your score!') + '</p>' +
+      '<div style="' + FF + ';font-weight:700;font-size:52px;color:#FFD84D">' + S.score + ' points</div>' +
+      '<div style="font-size:24px;font-weight:800">' + S.correct + ' correct answers · Best combo x' + S.bestCombo + '</div>' +
+      '<div style="font-size:20px;font-weight:800;color:#D9D0F2">' + (S.newHi ? 'New high score!' : 'High score: ' + S.hi) + '</div>' +
+      '<button data-a="start" style="margin-top:6px;min-height:68px;padding:0 56px;font-size:30px;font-weight:700;' + FF + ';background:#FFD84D;color:#241B4D;border:0;border-radius:999px;box-shadow:0 6px 0 #B8932A">Play again</button></div>');
+  }
+
+  function show() {
+    root.innerHTML = S.screen === 'menu' ? menu() : S.screen === 'play' ? buildPlay() : end();
+    if (S.screen === 'play') refreshPlay(true);
+  }
+  function start() {
+    S.screen = 'play'; S.qIdx = 0; S.y = 0; S.phase = 'falling'; S.hold = 0; S.picked = null; S.result = null; S.wrong = []; S.gain = 0;
+    S.score = 0; S.combo = 0; S.bestCombo = 0; S.lives = 5; S.correct = 0; S.newHi = false; show();
+  }
+  function finish() {
+    S.newHi = S.score > S.hi; if (S.newHi) S.hi = S.score; S.screen = 'end'; show();
+  }
+  function advance() {
+    if (S.lives <= 0 || S.qIdx >= 17) { finish(); return; }
+    S.qIdx++; S.y = 0; S.phase = 'falling'; S.hold = 0; S.picked = null; S.result = null; S.wrong = []; S.gain = 0; refreshPlay(true);
+  }
+  function pick(idx) {
+    if (S.phase !== 'falling' || S.wrong.indexOf(idx) >= 0) return;
+    var q = Q[S.qIdx];
+    if (idx === q.a) {
+      S.gain = 100 + S.combo * 25 + Math.round((100 - S.y) / 4);
+      S.combo++; S.bestCombo = Math.max(S.bestCombo, S.combo); S.score += S.gain; S.correct++;
+      S.phase = 'result'; S.result = 'ok'; S.hold = 0; S.picked = idx;
+    } else {
+      S.lives--; S.combo = 0; S.picked = idx; S.wrong = S.wrong.concat([idx]);
+      if (S.lives <= 0) { S.phase = 'result'; S.result = 'dead'; S.hold = 0; }
+    }
+    refreshPlay(true);
+  }
+  function tick() {
+    if (S.screen !== 'play') return;
+    if (S.phase === 'falling') {
+      var ny = S.y + 100 / (WAVES[Math.floor(S.qIdx / 6)].fall * 20);
+      if (ny >= 100) {
+        S.y = 100; S.lives--; S.combo = 0; S.picked = null; S.phase = 'result'; S.result = S.lives <= 0 ? 'dead' : 'miss'; S.hold = 0; refreshPlay(true);
+      } else { S.y = ny; refreshPlay(false); }
+    } else {
+      S.hold++; if (S.hold >= 26) advance();
+    }
+  }
+  root.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-a]'); if (!b || b.disabled) return;
+    if (b.getAttribute('data-a') === 'start') start();
+    else if (b.getAttribute('data-a') === 'pick') pick(parseInt(b.getAttribute('data-i'), 10));
+  });
+  setInterval(tick, 50);
+  function fit() { stage.style.transform = 'translate(-50%,-50%) scale(' + Math.min(window.innerWidth / 1040, window.innerHeight / 720) + ')'; }
+  window.addEventListener('resize', fit); fit(); show();
+})();
+</script>
+</body>
+</html>
